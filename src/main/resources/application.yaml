@@ -7,6 +7,9 @@ spring:
   web:
     resources:
       add-mappings: false  # 禁用静态资源映射（纯 API 服务不需要）
+  mvc:
+    async:
+      request-timeout: -1  # -1 表示请求不超时
 
 # FastAPI 服务地址配置
 fastapi:

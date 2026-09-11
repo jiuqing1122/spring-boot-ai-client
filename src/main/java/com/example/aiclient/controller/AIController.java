@@ -1,11 +1,10 @@
 package com.example.aiclient.controller;
 
-import com.example.aiclient.dto.ChatResponse;
 import com.example.aiclient.service.AIService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -28,5 +27,17 @@ public class AIController {
         result.put("data",reply);
 
         return result;
+    }
+
+    /**
+     * 流式接口：SSE 转发 FastAPI 的流式响应
+     * 示例：POST /test-ai/stream
+     * 请求体：{"prompt":"你好"}
+     */
+    @PostMapping(value = "/test-ai/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter testAiStream(@RequestBody Map<String, String> body) {
+        SseEmitter emitter = new SseEmitter(0L);
+        aiService.chatStream(body.get("prompt"), emitter);
+        return emitter;
     }
 }

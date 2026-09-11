@@ -13,6 +13,13 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.CompletableFuture;
 
 @Service
 @Slf4j
@@ -56,5 +63,39 @@ public class AIService {
 
         return response.getReply();
 
+    }
+
+    /**
+     * 流式调用 FastAPI，将 SSE 事件转发到 SseEmitter
+     */
+    public void chatStream(String prompt, SseEmitter emitter) {
+        String apiUrl = fastapiBaseUrl + FastApiConstant.CHAT_STREAM_API_URL;
+
+        log.info("流式调用 FastAPI | url={} | prompt={}", apiUrl, prompt);
+
+        // 独立线程执行（RestClient 是阻塞式，不能占用 Tomcat 请求线程）
+        CompletableFuture.runAsync(() -> {
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                    restClient.post()
+                            .uri(apiUrl)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .body(new ChatRequest(prompt)) // 发送 JSON 请求体
+                            .retrieve() // 执行请求
+                            .body(InputStream.class),// 解析响应体为 InputStream 类型
+                    StandardCharsets.UTF_8
+            ))) {
+                String line;
+                // 读取响应体，直到结束
+                while ((line = reader.readLine()) != null) {
+                    if (line.startsWith("data:")) {
+                        emitter.send(line.substring(5).trim());
+                    }
+                }
+                emitter.complete(); // 标记流结束
+            } catch (Exception e) {
+                log.error("流式调用 FastAPI 失败 | prompt={}", prompt, e);
+                emitter.completeWithError(e); // 标记流失败
+            }
+        });
     }
 }
