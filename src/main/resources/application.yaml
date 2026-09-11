@@ -1,0 +1,23 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: spring-boot-ai-client
+  web:
+    resources:
+      add-mappings: false  # 禁用静态资源映射（纯 API 服务不需要）
+
+# FastAPI 服务地址配置
+fastapi:
+  base-url: http://localhost:8000
+  # 连接超时（毫秒）
+  connect-timeout: 5000
+  # 读超时（毫秒），AI 调用可能较慢，设为 60 秒
+  read-timeout: 60000
+
+logging:
+  level:
+    com.example.aiclient: DEBUG
+  charset:
+    console: UTF-8
