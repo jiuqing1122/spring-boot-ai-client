@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 流式输出测试</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; }
+        #output { border: 1px solid #ddd; padding: 20px; min-height: 200px; margin-top: 20px;
+                  white-space: pre-wrap; word-wrap: break-word; background: #f9f9f9; }
+        #status { color: #666; margin-top: 10px; }
+        input { padding: 8px; width: 60%; }
+        button { padding: 8px 16px; margin-left: 10px; cursor: pointer; }
+        .error { color: red; }
+        .done { color: green; font-style: italic; }
+    </style>
+</head>
+<body>
+    <h1>AI 流式输出测试</h1>
+    <div>
+        <input id="promptInput" type="text" placeholder="输入你的问题..." value="用一句话介绍你自己">
+        <button id="sendBtn" onclick="startStream()">发送</button>
+    </div>
+    <div id="status"></div>
+    <div id="output"></div>
+
+    <script>
+        async function startStream() {
+            const prompt = document.getElementById('promptInput').value;
+            const outputEl = document.getElementById('output');
+            const statusEl = document.getElementById('status');
+            const sendBtn = document.getElementById('sendBtn');
+
+            outputEl.textContent = '';
+            outputEl.className = '';
+            statusEl.textContent = '正在连接...';
+            sendBtn.disabled = true;
+
+            // 根据实际情况修改此地址
+            // 如果直接访问 FastAPI: http://localhost:8000/ai/chat/stream
+            // 如果通过 Spring Boot 转发: http://localhost:8080/test-ai/stream
+            const API_URL = 'http://localhost:8080/test-ai/stream';
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt: prompt })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                statusEl.textContent = '已连接，正在接收...';
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    // 按 SSE 规范，事件以 \n\n 分隔
+                    const parts = buffer.split('\n\n');
+                    // 最后一个部分可能不完整，保留到下次处理
+                    buffer = parts.pop();
+
+                    for (const part of parts) {
+                        const trimmed = part.trim();
+                        if (!trimmed) continue;
+
+                        // 兼容 "data:" 和 "data: " 两种格式
+                        if (!trimmed.startsWith('data:')) continue;
+
+                        let dataStr = trimmed.substring(5);          // 去掉 "data:"
+                        if (dataStr.startsWith(' ')) {
+                            dataStr = dataStr.substring(1);          // 去掉可能存在的空格
+                        }
+
+                        try {
+                            const event = JSON.parse(dataStr);
+                            handleEvent(event, outputEl, statusEl);
+                        } catch (e) {
+                            console.warn('JSON 解析失败:', dataStr, e);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('请求失败:', error);
+                statusEl.textContent = '请求失败: ' + error.message;
+                statusEl.className = 'error';
+            } finally {
+                sendBtn.disabled = false;
+            }
+        }
+
+        function handleEvent(event, outputEl, statusEl) {
+            console.log('>>> 收到事件:', event);
+            switch (event.type) {
+                case 'message':
+                    outputEl.textContent += event.content;
+                    break;
+                case 'error':
+                    outputEl.textContent += `\n[错误 ${event.code}]: ${event.message}`;
+                    outputEl.className = 'error';
+                    statusEl.textContent = '发生错误';
+                    break;
+                case 'done':
+                    statusEl.textContent = '接收完成';
+                    statusEl.className = 'done';
+                    break;
+            }
+        }
+    </script>
+</body>
+</html>
