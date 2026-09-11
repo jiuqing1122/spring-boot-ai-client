@@ -147,7 +147,7 @@ curl.exe -N -X POST "http://localhost:8080/test-ai/stream" `
 
 ### 浏览器测试
 
-直接用浏览器打开 `sse_test.html`，把 `API_URL` 改为：
+直接用浏览器打开 `src/main/resources/static/sse_test.html`，把 `API_URL` 改为：
 
 ```javascript
 const API_URL = 'http://localhost:8080/test-ai/stream';
