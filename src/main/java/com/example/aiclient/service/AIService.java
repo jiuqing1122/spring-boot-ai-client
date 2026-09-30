@@ -182,15 +182,18 @@ public class AIService {
     /** 发送标准 error 事件（流已经开始后只能靠 event 传递错误，不能改状态码） */
     private void sendError(SseEmitter emitter, int code, String message) {
         try {
-            // 用 ObjectMapper 序列化，所有转义（引号/换行/Unicode）由 Jackson 处理，
-            // 不再手工 String.format 拼 JSON —— 手工转义只堵了引号一种字符，是注入隐患
+            // 手工 String.format 拼 JSON 只转义了引号, 换行/反斜杠/制表符等会产出非法 JSON,
+            // 客户端解析失败就拿不到错误信息。改用 ObjectMapper, 转义全部交给 Jackson
             String json = objectMapper.writeValueAsString(Map.of(
                     "type", "error",
                     "code", code,
                     "message", message));
             emitter.send(SseEmitter.event().name("error").data(json));
         } catch (Exception ignored) {
-            // 如果连 error 都发不出去（连接已断），忽略即可
+            // 这里必须是 Exception, 不能只接 IOException:
+            // Jackson 3 的 JacksonException 已改为继承 RuntimeException(非受检),
+            // 只 catch IOException 接不住序列化异常, 且编译器不会提醒。
+            // 顺带也覆盖了"连接已断, error 发不出去"的情况, 忽略即可
         }
     }
 

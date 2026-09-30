@@ -445,8 +445,8 @@ public class RagService {
 
     private void sendSseError(SseEmitter emitter, int code, String message) {
         try {
-            // 用 ObjectMapper 序列化，转义（引号/换行/Unicode）全部交给 Jackson，
-            // 替代手工 String.format 拼 JSON + replace 只转义引号的写法（不完整的转义 = 注入隐患）
+            // 手工 String.format 拼 JSON 只转义了引号, 换行/反斜杠/制表符等会产出非法 JSON,
+            // 客户端解析失败就拿不到错误信息。改用 ObjectMapper, 转义全部交给 Jackson
             String json = objectMapper.writeValueAsString(Map.of(
                     "type", "error",
                     "code", code,
