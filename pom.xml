@@ -49,6 +49,17 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-restclient</artifactId>
         </dependency>
+
+        <!--
+          Reactive Streams 接口（org.reactivestreams.Publisher 等）。
+          RestClient 处理 MultipartBodyBuilder 时类的解析路径会引用到它，
+          而 spring-boot-starter-web 是 Servlet 栈，不带这个包。
+          版本由 Spring Boot BOM 统一管理，无需指定。
+        -->
+        <dependency>
+            <groupId>org.reactivestreams</groupId>
+            <artifactId>reactive-streams</artifactId>
+        </dependency>
     </dependencies>
 
     <build>
