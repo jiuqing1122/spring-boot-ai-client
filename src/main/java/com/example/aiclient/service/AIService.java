@@ -14,28 +14,32 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 @Service
 @Slf4j
-//@RequiredArgsConstructor
 public class AIService {
     private final RestClient restClient;
     private final ThreadPoolTaskExecutor sseExecutor;
+    private final ObjectMapper objectMapper;
 
     /**
      * 显式构造函数 + @Qualifier，确保注入的是 sseExecutor 而不是 Spring Boot
      * 自动配置的 applicationTaskExecutor（两者都是 ThreadPoolTaskExecutor 类型）
      */
     public AIService(RestClient restClient,
-                     @Qualifier("sseExecutor") ThreadPoolTaskExecutor sseExecutor) {
+                     @Qualifier("sseExecutor") ThreadPoolTaskExecutor sseExecutor,
+                     ObjectMapper objectMapper) {
         this.restClient = restClient;
         this.sseExecutor = sseExecutor;
+        this.objectMapper = objectMapper;
     }
 
     @Value("${fastapi.base-url}")
@@ -178,10 +182,14 @@ public class AIService {
     /** 发送标准 error 事件（流已经开始后只能靠 event 传递错误，不能改状态码） */
     private void sendError(SseEmitter emitter, int code, String message) {
         try {
-            String json = String.format("{\"type\":\"error\",\"code\":%d,\"message\":\"%s\"}",
-                    code, message.replace("\"", "\\\""));
+            // 用 ObjectMapper 序列化，所有转义（引号/换行/Unicode）由 Jackson 处理，
+            // 不再手工 String.format 拼 JSON —— 手工转义只堵了引号一种字符，是注入隐患
+            String json = objectMapper.writeValueAsString(Map.of(
+                    "type", "error",
+                    "code", code,
+                    "message", message));
             emitter.send(SseEmitter.event().name("error").data(json));
-        } catch (IOException ignored) {
+        } catch (Exception ignored) {
             // 如果连 error 都发不出去（连接已断），忽略即可
         }
     }

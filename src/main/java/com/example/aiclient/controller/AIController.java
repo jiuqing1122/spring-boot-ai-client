@@ -1,5 +1,6 @@
 package com.example.aiclient.controller;
 
+import com.example.aiclient.dto.ChatRequest;
 import com.example.aiclient.service.AIService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -35,9 +36,9 @@ public class AIController {
      * 请求体：{"prompt":"你好"}
      */
     @PostMapping(value = "/test-ai/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter testAiStream(@RequestBody Map<String, String> body) {
+    public SseEmitter testAiStream(@RequestBody ChatRequest req) {
         SseEmitter emitter = new SseEmitter(0L);
-        aiService.chatStream(body.get("prompt"), emitter);
+        aiService.chatStream(req.getPrompt(), emitter);
         return emitter;
     }
 }
