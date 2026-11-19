@@ -31,6 +31,12 @@ mybatis-plus:
       logic-delete-value: 1
       logic-not-delete-value: 0
 
+app:
+  jwt:
+    # 生产走环境变量；本地 dev 在 application-dev.yml 覆盖
+    secret: ${JWT_SECRET:}
+    expire-minutes: 120
+
 # FastAPI 服务地址配置
 fastapi:
   base-url: http://localhost:8000

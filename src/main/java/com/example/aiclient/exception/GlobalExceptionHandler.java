@@ -4,6 +4,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -68,6 +70,22 @@ public class GlobalExceptionHandler {
         body.put("code", 40001);
         body.put("message", "请求参数类型错误：" + ex.getName() + " 无法转换为 "
                 + (ex.getRequiredType() == null ? "目标类型" : ex.getRequiredType().getSimpleName()));
+        body.put("data", null);
+        return ResponseEntity.badRequest().body(body);
+    }
+
+    /** @Valid 参数校验失败：400 + 40000 */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
+        String message = ex.getBindingResult().getFieldErrors().stream()
+                .map(FieldError::getDefaultMessage)
+                .findFirst()
+                .orElse("参数校验失败");
+        log.warn("参数校验失败 | {}", message);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("code", 40000);
+        body.put("message", message);
         body.put("data", null);
         return ResponseEntity.badRequest().body(body);
     }

@@ -1,7 +1,6 @@
 package com.example.aiclient.service;
 
 import com.example.aiclient.constant.FastApiConstant;
-import com.example.aiclient.dto.QaRecord;
 import com.example.aiclient.dto.RagChatRequest;
 import com.example.aiclient.dto.SourceItem;
 import com.example.aiclient.exception.BizException;
@@ -26,9 +25,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.time.LocalDateTime;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @Slf4j
@@ -36,19 +33,19 @@ public class RagService {
     private final RestClient restClient;
     private final ThreadPoolTaskExecutor sseExecutor;
     private final ObjectMapper objectMapper;
+    private final QaRecordService qaRecordService;
 
     @Value("${fastapi.base-url}")
     private String fastapiBaseUrl;
 
-    /** 问答记录：内存存储，重启即丢（符合练习项目定位） */
-    private final ConcurrentHashMap<String, QaRecord> qaRecord = new ConcurrentHashMap<>();
-
     public RagService(RestClient restClient,
                       @Qualifier("sseExecutor") ThreadPoolTaskExecutor sseExecutor,
-                      ObjectMapper objectMapper) {
+                      ObjectMapper objectMapper,
+                      QaRecordService qaRecordService) {
         this.restClient = restClient;
         this.sseExecutor = sseExecutor;
         this.objectMapper = objectMapper;
+        this.qaRecordService = qaRecordService;
     }
 
     /**
@@ -155,7 +152,8 @@ public class RagService {
      * @return Map<String, Object>
      */
     @SuppressWarnings("unchecked")
-    public Map<String, Object> ragChat(String question) {
+    public Map<String, Object> ragChat(String question, Long userId) {
+        long start = System.currentTimeMillis();
         String url = fastapiBaseUrl + FastApiConstant.RAG_CHAT_API_URL;
         log.info("转发 RAG 问答 | url={} | question={}", url, question);
 
@@ -177,42 +175,33 @@ public class RagService {
         }
 
         Object code = resp.get("code");
-        if (code != null && "200".equals(code.toString())) {
-            saveFromNonStreamResponse(question, resp);
+        if (userId != null && code != null && "200".equals(code.toString())) {
+            saveFromNonStreamResponse(userId, question, resp,
+                    (int) (System.currentTimeMillis() - start));
         }
 
         return resp;
     }
 
     @SuppressWarnings("unchecked")
-    private void saveFromNonStreamResponse(String question, Map<String, Object> resp) {
+    private void saveFromNonStreamResponse(Long userId, String question,
+                                           Map<String, Object> resp, int latencyMs) {
         try {
-            //获取响应数据
             Object dataObject = resp.get("data");
-            //判断dataObject是否为Map类型
             if (!(dataObject instanceof Map)) {
                 return;
             }
-
-            //将dataObject转换为Map<String, Object>
             Map<String, Object> data = (Map<String, Object>) dataObject;
-
-            //从data中获取LLM的回复
             String answer = String.valueOf(data.getOrDefault("answer", ""));
 
-            //创建List集合，存储SourceItem对象
             List<SourceItem> sourceItems = new ArrayList<>();
-            //从data中获取sources（FastAPI 返回的字段名是复数，与 SSE 事件解析保持一致）
             Object sourceObject = data.get("sources");
-            //判断sourceObject是否为List类型
             if (sourceObject instanceof List) {
-                //如果是List，遍历sourceObject并转换为SourceItem对象，添加到sourceItems中
-                for (Object source: (List<?>) sourceObject) {
+                for (Object source : (List<?>) sourceObject) {
                     sourceItems.add(objectMapper.convertValue(source, SourceItem.class));
                 }
             }
-            //保存问答记录
-            saveRecord(question, answer, sourceItems, "SUCCESS");
+            qaRecordService.save(userId, question, answer, "SUCCESS", latencyMs, sourceItems);
         } catch (Exception e) {
             log.warn("保存非流式问答记录失败 | err={}", e.getMessage());
         }
@@ -223,7 +212,8 @@ public class RagService {
      * @param question
      * @param emitter
      */
-    public void ragChatStream(String question, SseEmitter emitter) {
+    public void ragChatStream(String question, Long userId, SseEmitter emitter) {
+        long start = System.currentTimeMillis();
         String url = fastapiBaseUrl + FastApiConstant.RAG_CHAT_STREAM_API_URL;
         log.info("转发 RAG 流式问答 | url={} | question={}", url, question);
 
@@ -308,85 +298,25 @@ public class RagService {
                 } catch (Exception ignored) { }
                 emitter.complete();
             } finally {
-                // 无论成功失败都保存，除非"什么都没发生"（比如流开始前就报错）
-                if (!(answerBuf.isEmpty() && sourcesBuf.isEmpty() && "SUCCESS".equals(statusHolder[0]))) {
-                    saveRecord(question, answerBuf.toString(), sourcesBuf, statusHolder[0]);
+                // 旧 /rag 接口没有登录用户，不落库；新 /api 接口由 Controller 线程传入 userId
+                if (userId != null
+                        && !(answerBuf.isEmpty() && sourcesBuf.isEmpty()
+                        && "SUCCESS".equals(statusHolder[0]))) {
+                    try {
+                        qaRecordService.save(userId, question, answerBuf.toString(),
+                                statusHolder[0],
+                                (int) (System.currentTimeMillis() - start),
+                                sourcesBuf);
+                    } catch (Exception e) {
+                        // 落库失败不能影响已经完成的 SSE 流
+                        log.warn("保存流式问答记录失败 | err={}", e.getMessage());
+                    }
                 }
             }
         });
     }
 
-    /**
-     * 问答记录查询
-     * @param page
-     * @param pageSize
-     * @param docId
-     * @param keyword
-     * @return
-     */
-    public Map<String, Object> listQaRecords(int page, int pageSize, String docId, String keyword) {
-        List<QaRecord> records = new ArrayList<>(qaRecord.values());
-
-        // 按 docId 过滤：只要 sources 里有这个 docId 就算命中
-        if (docId != null && !docId.isBlank()) {
-            records.removeIf(r -> r.getSources() == null || r.getSources().stream()
-                    .noneMatch(s -> docId.equals(s.getDocId())));
-        }
-
-        // 按 keyword 过滤问题文本
-        if (keyword != null && !keyword.isBlank()) {
-            //将keyword转换为小写
-            String kw = keyword.toLowerCase();
-            records.removeIf(r -> r.getQuestion() == null || !r.getQuestion().toLowerCase().contains(kw));
-        }
-
-        // 按 createTime 倒序
-        records.sort(Comparator.comparing(QaRecord::getCreateTime).reversed());
-
-        // 总记录数
-        int total = records.size();
-        int from = Math.min((page - 1) * pageSize, records.size());//取二者中的较小值
-        int to = Math.min(from + pageSize, records.size());
-        List<QaRecord> items = records.subList(from, to);
-
-        Map<String, Object> data = new HashMap<>();
-        data.put("items", items);
-        data.put("total", total);
-        data.put("page", page);
-        data.put("pageSize", pageSize);
-
-        Map<String, Object> result = new HashMap<>();
-        result.put("code", 200);
-        result.put("message", "success");
-        result.put("data", data);
-        return result;
-    }
-
     //=======内部工具=======
-
-    /**
-     * 保存问答记录
-     * @param question
-     * @param answer
-     * @param sources
-     * @param status
-     */
-    private void saveRecord(String question, String answer, List<SourceItem> sources, String status) {
-        try {
-            QaRecord record = new QaRecord();
-            record.setId(UUID.randomUUID().toString().replace("-", ""));
-            record.setQuestion(question);
-            record.setAnswer(answer);
-            record.setSources(summarizeSources(sources));
-            record.setStatus(status);
-            record.setCreateTime(LocalDateTime.now().withNano(0));
-            qaRecord.put(record.getId(), record);
-            log.info("已保存问答记录 | id={} | status={} | sources={}",
-                    record.getId(), status, record.getSources().size());
-        } catch (Exception e) {
-            log.warn("保存问答记录失败 | err={}", e.getMessage());
-        }
-    }
 
     /** 解析 SSE sources 事件的 data JSON → List<SourceItem> */
     private List<SourceItem> parseSources(String dataJson) {
@@ -416,31 +346,6 @@ public class RagService {
         } catch (Exception e) {
             return null;
         }
-    }
-
-    /** sources 只存摘要：chunk 截断到 100 字，其余字段原样保留 */
-    private List<SourceItem> summarizeSources(List<SourceItem> sources) {
-        if (sources == null) {
-            return List.of();
-        }
-        List<SourceItem> result = new ArrayList<>(sources.size());
-        for (SourceItem s : sources) {
-            SourceItem copy = new SourceItem();
-            copy.setDocId(s.getDocId());
-            copy.setChunk(truncate(s.getChunk(), 100));
-            copy.setDistance(s.getDistance());
-            copy.setSimilarity(s.getSimilarity());
-            copy.setMetadata(s.getMetadata());
-            result.add(copy);
-        }
-        return result;
-    }
-
-    private String truncate(String s, int max) {
-        if (s == null) {
-            return null;
-        }
-        return s.length() <= max ? s : s.substring(0, max) + "...";
     }
 
     private void sendSseError(SseEmitter emitter, int code, String message) {

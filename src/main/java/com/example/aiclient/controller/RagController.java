@@ -45,28 +45,18 @@ public class RagController {
         return ragService.deleteDocument(docId);
     }
 
-    /** 非流式问答 */
+    /** 非流式问答（旧接口无登录用户，不落库；正式前端用 /api/rag/chat） */
     @PostMapping("/chat")
     public Map<String, Object> chat(@RequestBody RagChatRequest req) {
-        return ragService.ragChat(req.getQuestion());
+        return ragService.ragChat(req.getQuestion(), null);
     }
 
-    /** 流式问答（SSE） */
+    /** 流式问答（SSE，旧接口不落库） */
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chatStream(@RequestBody RagChatRequest req) {
         SseEmitter emitter = new SseEmitter(0L);
-        ragService.ragChatStream(req.getQuestion(), emitter);
+        ragService.ragChatStream(req.getQuestion(), null, emitter);
         return emitter;
-    }
-
-    /** 问答记录查询 */
-    @GetMapping("/qa-records")
-    public Map<String, Object> listQaRecords(
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "10") int pageSize,
-            @RequestParam(required = false) String docId,
-            @RequestParam(required = false) String keyword) {
-        return ragService.listQaRecords(page, pageSize, docId, keyword);
     }
 }
 
