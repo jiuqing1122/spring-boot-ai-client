@@ -43,8 +43,13 @@ build/
 *.myi
 db/
 db-data/
+# Flyway 迁移脚本必须入库（上面的 db/ 会误伤 src/main/resources/db）
+!src/main/resources/db/
+!src/main/resources/db/**
 
 ### Sensitive Configuration ###
+application-dev.yaml
+application-dev.yml
 application-local.yaml
 application-local.yml
 application-prod.yaml
