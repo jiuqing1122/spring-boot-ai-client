@@ -219,7 +219,7 @@ public class RagService {
 
         // 独立线程执行（RestClient 阻塞式，不能占用 Tomcat 请求线程）
         sseExecutor.execute(() -> {
-            // 累积容器：答完要落成 QaRecord
+            // 累积容器：答完落库到 qa_record
             StringBuilder answerBuf = new StringBuilder();
             List<SourceItem> sourcesBuf = new ArrayList<>();
             // 用长度为 1 的数组，便于在 lambda 内修改
