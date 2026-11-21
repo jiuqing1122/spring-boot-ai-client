@@ -21,6 +21,11 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  servlet:
+    multipart:
+      # 与 FastAPI 的 MAX_UPLOAD_MB=20 对齐
+      max-file-size: 20MB
+      max-request-size: 20MB
 
 mybatis-plus:
   configuration:
@@ -39,7 +44,8 @@ app:
 
 # FastAPI 服务地址配置
 fastapi:
-  base-url: http://localhost:8000
+  # 容器部署时由 FASTAPI_BASE_URL=http://fastapi:8000 覆盖
+  base-url: ${FASTAPI_BASE_URL:http://localhost:8000}
   # 连接超时（毫秒）
   connect-timeout: 5000
   # 读超时（毫秒），AI 调用可能较慢，设为 60 秒

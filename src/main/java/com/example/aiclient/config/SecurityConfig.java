@@ -43,7 +43,8 @@ public class SecurityConfig {
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/login", "/api/auth/register", "/error").permitAll()
+                        .requestMatchers("/api/auth/login", "/api/auth/register",
+                                "/api/health", "/error").permitAll()
                         // 开发期兼容旧接口与静态调试页，上线前收紧（见交接文档第 11 章）
                         .requestMatchers("/rag/**", "/ai/**", "/test-ai",
                                 "/rag_test.html", "/sse_test.html").permitAll()

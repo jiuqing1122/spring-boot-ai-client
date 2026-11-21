@@ -24,6 +24,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
@@ -93,19 +94,22 @@ public class RagService {
      */
     @SuppressWarnings("unchecked")
     public Map<String, Object> listDocuments(int page, int pageSize, String keyword) {
-        // 用 UriComponentsBuilder 编码 query，避免中文 keyword 拼 URL 出错
+        // 用 UriComponentsBuilder 编码 query，避免中文 keyword 拼 URL 出错。
+        // 必须传 URI 对象：传 String 会被 RestClient 当作模板再次编码（% -> %25）。
         String requestUrl = fastapiBaseUrl + FastApiConstant.RAG_DOCUMENTS_API_URL;
-        String url = UriComponentsBuilder
+        URI uri = UriComponentsBuilder
                 .fromUriString(requestUrl)
                 .queryParam("page", page)
                 .queryParam("page_size", pageSize)
                 .queryParamIfPresent("keyword",
                         Optional.ofNullable(keyword).filter(s -> !s.isBlank()))
-                .toUriString();
+                .encode(StandardCharsets.UTF_8)
+                .build()
+                .toUri();
 
         try {
             return restClient.get()
-                    .uri(url)
+                    .uri(uri)
                     .retrieve()
                     .body(Map.class);
         } catch (RestClientException e) {

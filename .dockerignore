@@ -1,0 +1,8 @@
+target/
+.git/
+.idea/
+*.log
+README.md
+PLAN.md
+# 本地数据库/JWT 密钥，禁止打进镜像（容器内由 compose 环境变量提供）
+src/main/resources/application-dev.yml
